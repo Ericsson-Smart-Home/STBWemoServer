@@ -1,0 +1,8 @@
+
+.idea/*
+.gradle/*
+build/*
+
+conf/config.properties
+
+STBWemoServer.iml
