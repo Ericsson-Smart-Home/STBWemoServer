@@ -71,7 +71,8 @@ public class MainServer implements AutoCloseable {
         Properties prop = new Properties();
         File f = new File("conf/config.properties");
 
-        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "TRACE");
+        String loglevel = prop.getProperty("loglevel","DEBUG");
+        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, loglevel);
         log = LoggerFactory.getLogger(MainServer.class);
 
         log.info("Properties file 1 = {}",((f == null)?"null":""+f.getAbsolutePath()));
@@ -165,7 +166,7 @@ public class MainServer implements AutoCloseable {
                     });
 
                     try {
-                        boolean start = controlPoint.start();
+                        boolean start = controlPoint.start(); //TODO wrong net its already started
                         log.info("Starting CP = {} start CNT = {}", start, ++tryCount);
                         //sendSms("Starting -- "+channelName+" CNT = "+tryCount,"+14088136959");
                     } catch (Throwable t) {
@@ -187,7 +188,7 @@ public class MainServer implements AutoCloseable {
                     boolean started = false;
                     while(!started) {
                         try {
-                            MainServer.connectToMQTT(mqttHost, mqttPort, mqttTopic, channelName+"ST");
+                            MainServer.connectToMQTT(mqttHost, mqttPort, mqttTopic, channelName);
                             started = true;
                             log.info("Connected to MQTT server");
                         } catch (MqttException e) {
@@ -275,8 +276,8 @@ public class MainServer implements AutoCloseable {
             log.info("EVENT : {}",event);
             if (theDevice != null) {
                 if ("play".equals(event)) {
-                    lightDevice(theDevice, false);
                     sendSms(smsMessage,smsTargets);
+                    lightDevice(theDevice, false);
                 }
                 else if ("stop".equals(event))
                     lightDevice(theDevice, true);
@@ -435,6 +436,7 @@ public class MainServer implements AutoCloseable {
         // MqttDefaultFilePersistence persistence = new
         // MqttDefaultFilePersistence(dir);
 
+        log.debug("Mqtt tcp://{}:{} deviceID = {}",host, port,"WeMo"+deviceId);
         mqtt = new MqttClient("tcp://"+host+":"+port, "WeMo"+deviceId, persistence);
         MqttConnectOptions connOpt = new MqttConnectOptions();
         connOpt.setConnectionTimeout(15); //Wait 15 sec
@@ -496,6 +498,7 @@ public class MainServer implements AutoCloseable {
     }
 
     static void sendSms(String message, String target){
+        log.debug("In - Send SMS msg = {} -> {}",message,target);
         if( target == null || target.length() == 0 || tropoToken == null ) return;
 
         Runnable r = new Runnable() {
