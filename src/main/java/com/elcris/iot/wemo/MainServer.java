@@ -161,7 +161,7 @@ public class MainServer implements AutoCloseable {
                             log.warn("Device REMOVE = {}", device.toString());
                             theDevice = null;
                             //Send SMS
-                            sendSms("deviceRemoved:"+device.toString(),smsTargets);
+                            //sendSms("deviceRemoved:"+device.toString(),smsTargets);
                         }
                     });
 
