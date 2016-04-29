@@ -9,10 +9,12 @@ import com.pubnub.api.Pubnub;
 import com.pubnub.api.PubnubError;
 import com.pubnub.api.PubnubException;
 import org.cybergarage.upnp.*;
+import org.cybergarage.upnp.control.ActionListener;
 import org.cybergarage.upnp.device.DeviceChangeListener;
 import org.cybergarage.upnp.device.NotifyListener;
 import org.cybergarage.upnp.event.EventListener;
 import org.cybergarage.upnp.ssdp.SSDPPacket;
+import org.cybergarage.xml.Node;
 import org.eclipse.paho.client.mqttv3.*;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.json.JSONException;
@@ -28,12 +30,14 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.*;
 
 public class MainServer implements AutoCloseable {
 
     public static final String BELKIN_INSIGHT_DEVICE_TYPE = "urn:Belkin:device:insight:1";
+    public static final String BELKIN_CONTROLLEE_DEVICE_TYPE = "urn:Belkin:device:controllee:1";
     public static final String BELKIN_BRIDGE_DEVICE_TYPE = "urn:Belkin:device:bridge:1";
 
     private static int restartTimeout = 25; //Sec
@@ -71,7 +75,8 @@ public class MainServer implements AutoCloseable {
         Properties prop = new Properties();
         File f = new File("conf/config.properties");
 
-        String loglevel = prop.getProperty("loglevel","DEBUG");
+        //String loglevel = prop.getProperty("loglevel","DEBUG");
+        String loglevel = prop.getProperty("loglevel","INFO");
         System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, loglevel);
         log = LoggerFactory.getLogger(MainServer.class);
 
@@ -97,10 +102,52 @@ public class MainServer implements AutoCloseable {
             enableMqtt = new Boolean( prop.getProperty("mqtt","true") );
             mqttHost = prop.getProperty("mqttHost","127.0.0.1");
             mqttPort = new Integer(prop.getProperty("mqttPort","1883"));
-            mqttTopic = prop.getProperty("mqttTopic","smartstb/events");
-            smsMessage = prop.getProperty("smsMessage","Enjoy your Film");
+            mqttTopic = prop.getProperty("mqttTopic","smartstb");
+            smsMessage = prop.getProperty("smsMessage","Like your movie? More at http://imdb.com");
             smsTargets = prop.getProperty("smsTargets",null);
             tropoToken = prop.getProperty("tropoToken",null);
+
+            //Override by System.prop
+            //TODO
+//            restartTimeout = new Integer(System.getenv("RESTART_TIMEOUT",""+restartTimeout));
+//            enablePubNub = new Boolean(System.getenv("ENABLE_PUBNUB",""+enablePubNub) );
+//            enableMqtt = new Boolean( System.getenv("ENABLE_MQTT",""+enableMqtt) );
+//            mqttPort = new Integer(System.getenv("MQTT_PORT",""+mqttPort));
+//            mqttTopic = System.getenv("MQTT_TOPIC",mqttTopic);
+
+            //RESIN DEPLOY
+            String resinID = System.getenv("RESIN_DEVICE_UUID");
+            if( resinID != null && resinID.length() > 0 ) {
+                //restart = 25 default ...
+                Map<String,String > envs = System.getenv();
+                for ( Map.Entry<String,String> env : envs.entrySet() ) {
+                    if( "PUBNUB_PUBKEY".equals(env.getKey()) ){
+                        publishKey = env.getValue();
+                    } else if( "PUBNUB_SUBKEY".equals(env.getKey()) ){
+                        subscribeKey = env.getValue();
+                    } else if( "SMS_MESSAGE".equals(env.getKey()) ){
+                        smsMessage = env.getValue();
+                    } else if( "SMS_TARGETS".equals(env.getKey()) ){
+                        smsTargets = env.getValue();
+                    } else if( "TROPO_TOKEN".equals(env.getKey()) ){
+                        tropoToken = env.getValue();
+                    } else if( "DEVICE_TYPE".equals(env.getKey()) ){
+                        deviceType = env.getValue();
+                    } else if( "DEVICE_NAME".equals(env.getKey()) ){
+                        deviceName = env.getValue();
+                    } else if( "DEVICE_SERIAL".equals(env.getKey()) ){
+                        deviceSerial = env.getValue();
+                    } else if( "MQTT_HOST".equals(env.getKey()) ){
+                        mqttHost = env.getValue();
+                    }
+                }
+
+                if( publishKey != null && subscribeKey != null && publishKey.length() > 0 && subscribeKey.length() > 0) {
+                    enablePubNub = true;
+                    channelName = resinID;
+                }
+            }
+
             log.info("Properties loaded = {}",test);
             log.info("Properties restartTimeout = {}",restartTimeout);
             log.info("Properties enablePubNub = {}",enablePubNub);
@@ -150,6 +197,63 @@ public class MainServer implements AutoCloseable {
                         public void deviceAdded(Device device) {
                             printDevice(device);
                             //TODO only focuses on one device @Stoffe
+                            //Add more checks
+                            //If type or name are set then filter only on specific
+
+//                            if(device.getDeviceType().equals(BELKIN_BRIDGE_DEVICE_TYPE)) {
+//                                //Action action = device.getAction("GetDeviceStatus");
+//
+//                                Service bridgeService = device.getService("urn:Belkin:service:bridge:1");
+//
+//                                Action action = bridgeService.getAction("GetEndDevicesWithStatus");
+//                                action.setArgumentValue("DevUDN","uuid:Bridge-1_0-231426B010001B");
+//                                //Action action = device.getAction("GetEndDevices");
+//
+//                                if(action.postControlAction()) {
+//                                    ArgumentList alist = action.getOutputArgumentList();
+//                                    for (Object obj : alist) {
+//                                        Argument arg = (Argument) obj;
+//                                        log.info("Arg name {} : {}", arg.getName(), arg.getValue());
+//                                    }
+//                                }
+//                                log.info("{}",action.getStatus().getDescription());
+//
+//                                Action setAction = bridgeService.getAction("SetDeviceStatus");
+//
+//                                Argument status = setAction.getArgument("DeviceStatus");
+//
+//                                ArgumentList inlist = new ArgumentList();
+////                                Node n = new Node("IsGroupAction").set
+////                                inlist.add(new Argument("IsGroupAction","NO"));
+////                                inlist.add(new Argument("DeviceID","94103EA2B2770076"));
+////                                inlist.add(new Argument("CapabilityID","10006"));
+////                                inlist.add(new Argument("CapabilityValue","1"));
+//                                inlist.getArgument("IsGroupAction").setValue("NO");
+//                                inlist.getArgument("DeviceID").setValue("94103EA2B2770076");
+//                                inlist.getArgument("CapabilityID").setValue("10006");
+//                                inlist.getArgument("CapabilityValue").setValue("1");
+//
+//                                setAction.setArgumentList(inlist);
+//                                log.info("{}",setAction.postControlAction());
+//
+//                            }
+
+
+                            if( deviceType != null && (!device.getDeviceType().equals(deviceType)) ) {
+                                log.info("Filter on device type -- aborting : {} != {}", deviceType, device.getDeviceType());
+                                return;
+                            }
+
+                            if( deviceName != null && (!device.getFriendlyName().equals(deviceName)) ) {
+                                log.info("Filter on device name -- aborting : {} != {}", deviceName, device.getFriendlyName());
+                                return;
+                            }
+
+                            if( deviceSerial != null && (!device.getSerialNumber().equals(deviceSerial)) ) {
+                                log.info("Filter on device serial # -- aborting : {} != {}", deviceSerial, device.getSerialNumber());
+                                return;
+                            }
+
                             if (device.getDeviceType().equals(deviceType)) {
                                 theDevice = device;
                             }
@@ -177,7 +281,8 @@ public class MainServer implements AutoCloseable {
         };
 
         ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
-        executor.scheduleWithFixedDelay(r, 0, restartTimeout, TimeUnit.SECONDS);
+        //executor.scheduleWithFixedDelay(r, 0, restartTimeout, TimeUnit.SECONDS);
+        executor.schedule(r,0,TimeUnit.SECONDS);
 
         //MQTT
         if(enableMqtt) {
@@ -252,6 +357,7 @@ public class MainServer implements AutoCloseable {
                             @Override
                             public void errorCallback(String channel, PubnubError error) {
                                 log.error("SUBSCRIBE : ERROR on channel {} : {}", channel, error.toString());
+                                pubnub.disconnectAndResubscribe();
                             }
                         }
                 );
@@ -263,17 +369,21 @@ public class MainServer implements AutoCloseable {
     }
 
     private static void handleJsonObj(JSONObject msg, String deviceId, String service) throws JSONException, ParseException {
-        if(msg.has("ts")) {
-            String ts = msg.getString("ts");
-            SimpleDateFormat datef = new SimpleDateFormat("yyyy-mm-DD'T'hh:mm:ssZ");
-            long tsl = datef.parse(ts).getTime();
-            boolean latestEvent = checkIfLatest(deviceId, tsl);
-            log.info("TIMESTAMP latest : {} TS = {} service : {}", latestEvent, tsl, service);
-            if( ! latestEvent ) return;
-        }
+
         if (msg.has("event")) {
             String event = msg.getString("event");
             log.info("EVENT : {}",event);
+            //Only track start & stop
+            if("play".equals(event) || "stop".equals(event)) {
+                if(msg.has("ts")) {
+                    String ts = msg.getString("ts");
+                    SimpleDateFormat datef = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
+                    long tsl = datef.parse(ts).getTime();
+                    boolean latestEvent = checkIfLatest(deviceId, tsl);
+                    log.info("TIMESTAMP latest : {} TS = {} service : {}", latestEvent, tsl, service);
+                    if( ! latestEvent ) return;
+                }
+            }
             if (theDevice != null) {
                 if ("play".equals(event)) {
                     sendSms(smsMessage,smsTargets);
@@ -312,7 +422,7 @@ public class MainServer implements AutoCloseable {
             return;
         }
 
-        if( deviceName != null && (!device.getSerialNumber().equals(deviceSerial)) ) {
+        if( deviceSerial != null && (!device.getSerialNumber().equals(deviceSerial)) ) {
             log.info("Filter on device serial # -- aborting : {} != {}", deviceSerial, device.getSerialNumber());
             return;
         }
@@ -389,7 +499,8 @@ public class MainServer implements AutoCloseable {
             } catch( Throwable e ) {
                 log.error("",e);
             }
-        } else if(device.getDeviceType().equals(BELKIN_INSIGHT_DEVICE_TYPE)) {
+        } else if(device.getDeviceType().equals(BELKIN_INSIGHT_DEVICE_TYPE) ||
+                device.getDeviceType().equals(BELKIN_CONTROLLEE_DEVICE_TYPE)) {
             String dummy = device.getAbsoluteURL("/foo.xml");
             log.debug("Dummy = {}", dummy);
 

@@ -1,5 +1,5 @@
 group 'com.elcris.iot.wemo'
-version '1.0.2'
+version '1.0.3'
 
 apply plugin: 'java'
 apply plugin: 'idea'
@@ -28,6 +28,7 @@ distZip {
 }
 
 mainClassName = "com.elcris.iot.wemo.MainServer"
+applicationDefaultJvmArgs = ["-XX:+UseParNewGC","-XX:+UseConcMarkSweepGC","-XX:MaxNewSize=32M","-XX:NewSize=32M","-Xms96M","-Xmx96M"]
 
 dependencies {
     compile fileTree(dir: 'libs', include: '*.jar')
